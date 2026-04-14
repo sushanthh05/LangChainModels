@@ -1,7 +1,8 @@
 from langchain_huggingface import HuggingFacePipeline
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
+
 load_dotenv()
 
 model = HuggingFacePipeline.from_model_id(
@@ -10,16 +11,20 @@ model = HuggingFacePipeline.from_model_id(
     pipeline_kwargs={"max_new_tokens": 100}
 )
 
-# Store conversation history
-chat_history = []
+# System message to define chatbot behavior
+system_message = SystemMessage(content="You are a helpful AI assistant. Answer questions concisely and remember previous conversations.")
 
-# Create a prompt template that includes chat history
-prompt = PromptTemplate(
-    input_variables=["history", "user_input"],
-    template="{history}User: {user_input}\nAssistant:"
-)
+# Conversation history
+messages = [system_message]
 
-chain = prompt | model | StrOutputParser()
+# Create chat prompt template
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "{system}"),
+    ("placeholder", "{history}"),
+    ("human", "{user_input}")
+])
+
+chain = prompt | model
 
 while True:
     user_input = input('You: ')
@@ -27,14 +32,19 @@ while True:
         print("Exiting the chatbot. Goodbye!")
         break
     
-    # Build conversation history string
-    history_str = ""
-    for msg in chat_history:
-        history_str += msg + "\n"
+    messages.append(HumanMessage(content=user_input))
     
-    response = chain.invoke({"history": history_str, "user_input": user_input}).strip()
+    # Format messages for the chain
+    history_messages = [f"{msg.__class__.__name__}: {msg.content}" for msg in messages[:-1]]
+    history_str = "\n".join(history_messages)
     
-    # Extract just the assistant's response
+    response = chain.invoke({
+        "system": system_message.content,
+        "history": history_str,
+        "user_input": user_input
+    }).strip()
+    
+    # Extract assistant response
     if "Assistant:" in response:
         assistant_response = response.split("Assistant:")[-1].strip()
         if "\nUser:" in assistant_response:
@@ -42,8 +52,5 @@ while True:
     else:
         assistant_response = response
     
-    # Add to chat history
-    chat_history.append(f"User: {user_input}")
-    chat_history.append(f"Assistant: {assistant_response}")
-    
+    messages.append(AIMessage(content=assistant_response))
     print(f'ChatBot: {assistant_response}')
